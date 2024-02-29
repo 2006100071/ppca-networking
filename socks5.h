@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #define PORT "8080" // 提供给用戶连接的 port
+#define PROXY_PORT "1080" // 提供给用戶连接的 proxy_port
 #define BACKLOG 100 // 有多少个特定的连接队列（pending connections queue）
 #define BUFFER_SIZE 4096
 #define SOCKS5_VERSION 0X05
@@ -41,3 +42,6 @@ enum{
 
 void *get_in_addr(struct sockaddr *sa);
 int client(char *dst_add, char *dst_port, int *type);
+void sigchld_handler(int s);
+void forward(int srcSocket, int destSocket);
+void Socks5Forward(int clientSocket, int targetSocket);

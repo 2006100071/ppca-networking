@@ -1,5 +1,47 @@
 #include "socks5.h"
 
+void forward(int srcSocket, int destSocket) {
+    char buffer[BUFFER_SIZE];
+    ssize_t bytesRead;
+
+    while ((bytesRead = read(srcSocket, buffer, sizeof(buffer))) > 0) {
+        write(destSocket, buffer, bytesRead);
+    }
+}
+
+void Socks5Forward(int clientSocket, int targetSocket) {
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("fork");
+        exit(EXIT_FAILURE);
+    } else if (pid == 0) {
+        // Child process: forward from client to target
+        forward(clientSocket, targetSocket);
+        exit(EXIT_SUCCESS);
+    } else {
+        // Parent process: forward from target to client
+        forward(targetSocket, clientSocket);
+    }
+
+    close(clientSocket);
+    close(targetSocket);
+}
+
+void sigchld_handler(int s)
+{
+  while(waitpid(-1, NULL, WNOHANG) > 0);
+}
+
+// 取得 sockaddr，IPv4 或 IPv6：
+void *get_in_addr(struct sockaddr *sa)
+{
+  if (sa->sa_family == AF_INET) {
+    return &(((struct sockaddr_in*)sa)->sin_addr);
+  }
+  return &(((struct sockaddr_in6*)sa)->sin6_addr);
+}
+
 int client(char *dst_add, char *dst_port, int *type)
 {
     int sockfd, numbytes;  
@@ -29,6 +71,7 @@ int client(char *dst_add, char *dst_port, int *type)
 
         if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
             close(sockfd);
+            
             perror("client: connect");
             continue;
         }
@@ -38,7 +81,7 @@ int client(char *dst_add, char *dst_port, int *type)
 
     if (p == NULL) {
         fprintf(stderr, "client: failed to connect\n");
-        return 2;
+        return errno;
     }
 
     inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),

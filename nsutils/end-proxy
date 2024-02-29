@@ -1,12 +1,12 @@
 #!/bin/bash
-export PORT=8080
+export PORT=1080
 nc -l $PORT &
 # change the line above to start your own server
 # node ~/Code/proxy/socks5 &
 # ../bin/proxy &
 cd ~/ppca-networking/
-./socks5 &
-# ./proxy &
+# ./socks5 &
+./proxy &
 
 # Wait until the server is open for connections
 until lsof -i :$PORT > /dev/null; do sleep .1; done

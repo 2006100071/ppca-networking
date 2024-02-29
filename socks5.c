@@ -1,47 +1,7 @@
 #include"socks5.h"
 
 
-void sigchld_handler(int s)
-{
-  while(waitpid(-1, NULL, WNOHANG) > 0);
-}
 
-// 取得 sockaddr，IPv4 或 IPv6：
-void *get_in_addr(struct sockaddr *sa)
-{
-  if (sa->sa_family == AF_INET) {
-    return &(((struct sockaddr_in*)sa)->sin_addr);
-  }
-  return &(((struct sockaddr_in6*)sa)->sin6_addr);
-}
-
-void forward(int srcSocket, int destSocket) {
-    char buffer[BUFFER_SIZE];
-    ssize_t bytesRead;
-
-    while ((bytesRead = read(srcSocket, buffer, sizeof(buffer))) > 0) {
-        write(destSocket, buffer, bytesRead);
-    }
-}
-
-void Socks5Forward(int clientSocket, int targetSocket) {
-    pid_t pid = fork();
-
-    if (pid < 0) {
-        perror("fork");
-        exit(EXIT_FAILURE);
-    } else if (pid == 0) {
-        // Child process: forward from client to target
-        forward(clientSocket, targetSocket);
-        exit(EXIT_SUCCESS);
-    } else {
-        // Parent process: forward from target to client
-        forward(targetSocket, clientSocket);
-    }
-
-    // close(clientSocket);
-    close(targetSocket);
-}
 
 uint16_t get_local(int sockfd, char *ip, int type) {
     
@@ -50,7 +10,7 @@ uint16_t get_local(int sockfd, char *ip, int type) {
 
     if (getsockname(sockfd, (struct sockaddr *)&addr, &addrlen) == -1) {
         perror("getsockname");
-        return 1;
+        return -1;
     }
 
     // inet_ntop(addr.sin_family,
@@ -60,14 +20,14 @@ uint16_t get_local(int sockfd, char *ip, int type) {
     {
       if (inet_ntop(AF_INET, get_in_addr((struct sockaddr *)&addr), ip, INET_ADDRSTRLEN) == NULL) {
         perror("inet_ntop");
-        return 1;
+        return -1;
       }
     }
     else if(type == TypeIPv6)
     {
       if (inet_ntop(AF_INET6, get_in_addr((struct sockaddr *)&addr), ip, INET6_ADDRSTRLEN) == NULL) {
         perror("inet_ntop");
-        return 1;
+        return -1;
       }
     }
     // else if(type == TypeDomain)
@@ -89,10 +49,10 @@ void handle_client(int client_socket)
    // accept client request and authenticates
    char buf[BUFFER_SIZE];
    char VER, NMETHODS;
-   recv(client_socket,&VER,1,0);
-   recv(client_socket,&NMETHODS,1,0);
+   recv(client_socket,&VER,1,MSG_WAITALL);
+   recv(client_socket,&NMETHODS,1,MSG_WAITALL);
    char *METHODS =  (char *)malloc(NMETHODS);
-   recv(client_socket,METHODS,NMETHODS,0);
+   recv(client_socket,METHODS,NMETHODS,MSG_WAITALL);
   //  printf("method %d Nm %d\n", METHODS[0], NMETHODS);
    if (VER != SOCKS5_VERSION){
         perror("protocol version not support");
@@ -120,48 +80,28 @@ void handle_client(int client_socket)
    }
 
     unsigned char method_selection[] = { SOCKS5_VERSION, Method_NoAuth};
-    write(client_socket, method_selection, sizeof method_selection);
-    // printf("fg %d ver %d m %d\n",fg, VER, methods);
+    send(client_socket, method_selection, sizeof method_selection,0);
+    printf("fg %d ver %d m %d\n",fg, VER, methods);
 
   // accept client connect request
     memset(buf,0, sizeof buf);
     unsigned char connect_request[4];
-    read(client_socket, connect_request, sizeof(connect_request));
+    // memset(connect_request,0, sizeof connect_request);
+    if(recv(client_socket, connect_request, sizeof(connect_request),MSG_WAITALL) == -1){
+      perror("recv error");
+    }
     char ver = connect_request[0];
     char cmd = connect_request[1];
     char rsv = connect_request[2];
     char atyp = connect_request[3];
     printf("ver %d cmd %d rsv %d atyp %d\n", ver,cmd, rsv, atyp);
 
-    if(ver != SOCKS5_VERSION){
-      printf("ver %d\n",ver);
-      perror("protocol version not supported");
-      return;
-    }
-
-    if(cmd != CmdBind && cmd != CmdConnect && cmd != CmdUDP){
-      printf("cmd %d\n",cmd);
-      perror("request command not supported");
-      return;
-    }
-
-    if (rsv != ReservedField) {
-      printf("rsv %d\n",rsv);
-      perror("invaild reserved field");
-      return;
-    }
-
-    if (atyp != TypeIPv4 && atyp != TypeIPv6 && atyp != TypeDomain){
-      printf("atyp %d\n",atyp);
-      perror("address type not supported");
-      return;
-    }
     // curl --proxy socks5://localhost:8080 www.baidu.com -v
 
     char dst_addr[256];
     // domain
     int add_len;
-    uint16_t dst_port;
+    
     if(atyp == TypeIPv4)
     {
       recv(client_socket, buf,IPv4Length,0);
@@ -180,27 +120,76 @@ void handle_client(int client_socket)
       add_len  = buf[0];
       recv(client_socket, dst_addr, add_len, 0);
       dst_addr[add_len] = '\0';
-    }else {
-        // Send an address type not supported message
-        unsigned char address_type_not_supported[] = { SOCKS5_VERSION, ReplyAddressTypeNotSupported, ReservedField, atyp, 0, 0 };
-        write(client_socket, address_type_not_supported, sizeof(address_type_not_supported));
-        close(client_socket);
-        return;
     }
+    // else {
+    //     // Send an address type not supported message
+    //     unsigned char address_type_not_supported[] = { SOCKS5_VERSION, ReplyAddressTypeNotSupported, ReservedField, atyp, 0, 0 };
+    //     write(client_socket, address_type_not_supported, sizeof(address_type_not_supported));
+    //     close(client_socket);
+    //     return;
+    // }
     
+    uint16_t dst_port;
     recv(client_socket, &dst_port, 2, 0);
     dst_port = ntohs(dst_port);
     
-    printf("atyp %d add %s port %d\n", atyp, dst_addr, dst_port);
+    printf("atyp %d port %d\n", atyp, dst_port);
+
+    if(ver != SOCKS5_VERSION){
+      printf("ver %d\n",ver);
+      perror("protocol version not supported");
+      return;
+    }
+
+    if(cmd != CmdBind && cmd != CmdConnect && cmd != CmdUDP){
+      printf("cmd %d\n",cmd);
+      perror("request command not supported");
+      unsigned char address_type_not_supported[] = { SOCKS5_VERSION, ReplyCommandNotSupported};
+      send(client_socket, address_type_not_supported, sizeof(address_type_not_supported),0);
+      return;
+    }
+
+    if (rsv != ReservedField) {
+      printf("rsv %d\n",rsv);
+      perror("invaild reserved field");
+      return;
+    }
+
+    if (atyp != TypeIPv4 && atyp != TypeIPv6 && atyp != TypeDomain){
+      printf("atyp %d\n",atyp);
+      perror("address type not supported");
+      // Send an address type not supported message
+      unsigned char address_type_not_supported[] = { SOCKS5_VERSION, ReplyAddressTypeNotSupported};
+      send(client_socket, address_type_not_supported, sizeof(address_type_not_supported),0);
+      // close(client_socket);
+      return;
+    }
 
     // Forward the client's request to the destination server
     char dst[48];
     sprintf(dst, "%hu", dst_port);
-    // printf("dst_port %s\n", dst);
+    printf("dst_addr %s dst_port %s\n", dst_addr,dst);
 
     int domain_type[1];
     int server_socket = client(dst_addr,dst, domain_type);
-    // printf("server %d\n", server_socket);
+    printf("server %d\n", server_socket);
+    if(server_socket == ECONNREFUSED){
+      unsigned char address_type_not_supported[] = { SOCKS5_VERSION, ReplyConnectionRefused};
+      send(client_socket, address_type_not_supported, sizeof(address_type_not_supported),0);
+      // close(client_socket);
+      return;
+    }else if(server_socket == 1){
+      unsigned char address_type_not_supported[] = { SOCKS5_VERSION, ReplyHostunreachable};
+      send(client_socket, address_type_not_supported, sizeof(address_type_not_supported),0);
+      // close(client_socket);
+      return;
+    }else if(server_socket == ENETUNREACH){
+      unsigned char address_type_not_supported[] = { SOCKS5_VERSION, ReplyNetworkUnreachable};
+      send(client_socket, address_type_not_supported, sizeof(address_type_not_supported),0);
+      // close(client_socket);
+      return;
+    }
+
 
     // Send a success reply
     char local_ip[INET6_ADDRSTRLEN];
@@ -208,7 +197,7 @@ void handle_client(int client_socket)
     if(atyp == TypeDomain)atyp = domain_type[0];
     uint16_t local_port = get_local(server_socket, local_ip,atyp);
     // 打印本地地址信息
-    printf("Local IP: %s\n", local_ip);
+    printf("Local IP: %s \n", local_ip);
     printf("Local Port: %hu atyp %d\n", local_port, atyp);
 
     unsigned char success_reply[] = { SOCKS5_VERSION,ReplySuccess,ReservedField,atyp};
@@ -225,7 +214,7 @@ void handle_client(int client_socket)
 
 }
 
-int main(void)
+int accept_client()
 {
   int sockfd, new_fd; // 在 sock_fd 进行 listen，new_fd 是新的连接
   struct addrinfo hints, *servinfo, *p;
@@ -314,7 +303,7 @@ int main(void)
       //   perror("send");
       handle_client(new_fd);
 
-      close(new_fd);
+      // close(new_fd);
 
       exit(0);
     }
@@ -322,4 +311,9 @@ int main(void)
   }
 
   return 0;
+}
+
+int main(void)
+{
+  accept_client();
 }
