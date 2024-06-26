@@ -1,0 +1,4 @@
+COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+curl    59739   lz    5u  IPv4 515324      0t0  TCP localhost:49822->localhost:socks (ESTABLISHED)
+proxy   59740   lz    4u  IPv6 521318      0t0  TCP localhost:socks->localhost:49822 (ESTABLISHED)
+sh      59742   lz    4u  IPv6 521318      0t0  TCP localhost:socks->localhost:49822 (ESTABLISHED)

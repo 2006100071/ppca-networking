@@ -6,6 +6,7 @@ nc -l $PORT &
 # ../bin/proxy &
 cd ~/ppca-networking/
 ./socks5 &
+
 # ./proxy &
 
 # Wait until the server is open for connections

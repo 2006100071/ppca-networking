@@ -1,0 +1,10 @@
+export PORT=8080
+
+
+ns-load-topo sample.ns
+nsexec ns2 python ~/ppca-networking/udp_echo.py &
+ns-source ns1 "$NETNS_SRC_BASE/start-proxy"
+
+expect "$(timeout 10  echo "hello1" | SOCKS5_SERVER=10.0.1.2:8080 socksify socat -v - UDP:10.0.2.2:80)" "hello1"
+expect "$(timeout 10  echo "hello world!" | SOCKS5_SERVER=10.0.1.2:8080 socksify socat -v - UDP:10.0.2.2:80)" "hello world!"
+expect "$(timeout 10  echo "what can i say" | SOCKS5_SERVER=10.0.1.2:8080 socksify socat -v - UDP:10.0.2.2:80)" "what can i say"

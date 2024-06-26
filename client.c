@@ -28,15 +28,47 @@ void Socks5Forward(int clientSocket, int targetSocket) {
     close(targetSocket);
 }
 
+uint16_t get_local(int sockfd, char *ip, int type) {
+    
+    struct sockaddr_in addr;
+    socklen_t addrlen = sizeof(addr);
+
+    if (getsockname(sockfd, (struct sockaddr *)&addr, &addrlen) == -1) {
+        perror("getsockname");
+        return -1;
+    }
+
+    if(type == TypeIPv4)
+    {
+      if (inet_ntop(AF_INET, get_in_addr((struct sockaddr *)&addr), ip, INET_ADDRSTRLEN) == NULL) 
+      {
+        perror("inet_ntop");
+        return -1;
+      }
+    }
+    else if(type == TypeIPv6)
+    {
+      if (inet_ntop(AF_INET6, get_in_addr((struct sockaddr *)&addr), ip, INET6_ADDRSTRLEN) == NULL) 
+      {
+        perror("inet_ntop");
+        return -1;
+      }
+    }
+    // printf("ip %s\n",ip);
+    unsigned short port = ntohs(addr.sin_port);
+    return port;
+}
+
 void sigchld_handler(int s)
 {
   while(waitpid(-1, NULL, WNOHANG) > 0);
 }
 
-// 取得 sockaddr，IPv4 或 IPv6：
+// Get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
 {
-  if (sa->sa_family == AF_INET) {
+  if (sa->sa_family == AF_INET) 
+  {
     return &(((struct sockaddr_in*)sa)->sin_addr);
   }
   return &(((struct sockaddr_in6*)sa)->sin6_addr);
@@ -56,22 +88,24 @@ int client(char *dst_add, char *dst_port, int *type)
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-    if ((rv = getaddrinfo(dst_add, dst_port, &hints, &servinfo)) != 0) {
+    if ((rv = getaddrinfo(dst_add, dst_port, &hints, &servinfo)) != 0) 
+    {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
         return 1;
     }
 
     // loop through all the results and connect to the first we can
-    for(p = servinfo; p != NULL; p = p->ai_next) {
-        if ((sockfd = socket(p->ai_family, p->ai_socktype,
-                p->ai_protocol)) == -1) {
+    for(p = servinfo; p != NULL; p = p->ai_next) 
+    {
+        if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) 
+        {
             perror("client: socket");
             continue;
         }
 
-        if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-            close(sockfd);
-            
+        if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) 
+        {
+            close(sockfd);    
             perror("client: connect");
             continue;
         }
@@ -79,7 +113,8 @@ int client(char *dst_add, char *dst_port, int *type)
         break;
     }
 
-    if (p == NULL) {
+    if (p == NULL) 
+    {
         fprintf(stderr, "client: failed to connect\n");
         return errno;
     }
@@ -98,17 +133,5 @@ int client(char *dst_add, char *dst_port, int *type)
     
 
     freeaddrinfo(servinfo); // all done with this structure
-
-    // if ((numbytes = recv(sockfd, buf, MAXDATASIZE-1, 0)) == -1) {
-    //     perror("recv");
-    //     exit(1);
-    // }
-
-    // buf[numbytes] = '\0';
-
-    // printf("client: received '%s'\n",buf);
-
-    // close(sockfd);
-
     return sockfd;
 }
